@@ -107,13 +107,13 @@ class DepthPipelineApp:
         # ── placeholder (visible before processing completes) ──
         self.export_placeholder = ttk.Label(
             self.export_frame,
-            text="上传图片并处理后，结果将显示在此处",
+            text="上传图片并处理后，预览将显示在此处",
             foreground="#999999",
             font=("", 11),
         )
         self.export_placeholder.pack(expand=True, pady=30)
 
-        # ── preview row ──
+        # ── preview row (hidden until processing completes) ──
         self.preview_frame = ttk.Frame(self.export_frame)
 
         left = ttk.Frame(self.preview_frame)
@@ -128,7 +128,7 @@ class DepthPipelineApp:
         self.depth_preview_label = ttk.Label(right)
         self.depth_preview_label.pack()
 
-        # ── path row ──
+        # ── path row (always visible) ──
         self.path_frame = ttk.Frame(self.export_frame)
         ttk.Label(self.path_frame, text="导出路径:").pack(side=tk.LEFT)
         self.path_var = tk.StringVar()
@@ -137,14 +137,16 @@ class DepthPipelineApp:
         ttk.Button(self.path_frame, text="浏览", command=self._browse_save_path).pack(
             side=tk.LEFT
         )
+        self.path_frame.pack(fill=tk.X, pady=5)
 
-        # ── save button ──
+        # ── save button (always visible, disabled until result ready) ──
         self.save_btn = ttk.Button(
             self.export_frame,
             text="保存文件",
             command=self._save_file,
             state=tk.DISABLED,
         )
+        self.save_btn.pack(pady=5)
 
     # ── Upload Handling ──────────────────────────────────────────────
 
@@ -293,17 +295,15 @@ class DepthPipelineApp:
         self.orig_preview_label.config(image=tk_orig)
         self.depth_preview_label.config(image=tk_result)
 
-        self.preview_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.path_frame.pack(fill=tk.X, pady=5)
-        self.save_btn.pack(pady=5)
+        # Insert preview above the path row
+        self.preview_frame.pack(fill=tk.BOTH, expand=True, pady=5, before=self.path_frame)
         self.save_btn.config(state=tk.NORMAL, text="保存文件")
 
     def _hide_export(self):
         self.preview_frame.pack_forget()
-        self.path_frame.pack_forget()
-        self.save_btn.pack_forget()
         self.save_btn.config(state=tk.DISABLED, text="保存文件")
-        self.export_placeholder.pack(expand=True, pady=30)
+        self.path_var.set("")
+        self.export_placeholder.pack(expand=True, pady=30, before=self.path_frame)
 
     def _browse_save_path(self):
         current = self.path_var.get()
