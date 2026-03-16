@@ -104,6 +104,15 @@ class DepthPipelineApp:
         self.export_frame = ttk.LabelFrame(parent, text="导出区域", padding=10)
         self.export_frame.pack(fill=tk.BOTH, expand=True)
 
+        # ── placeholder (visible before processing completes) ──
+        self.export_placeholder = ttk.Label(
+            self.export_frame,
+            text="上传图片并处理后，结果将显示在此处",
+            foreground="#999999",
+            font=("", 11),
+        )
+        self.export_placeholder.pack(expand=True, pady=30)
+
         # ── preview row ──
         self.preview_frame = ttk.Frame(self.export_frame)
 
@@ -136,9 +145,6 @@ class DepthPipelineApp:
             command=self._save_file,
             state=tk.DISABLED,
         )
-
-        # all export widgets start hidden
-        # (they are packed in _show_export after processing completes)
 
     # ── Upload Handling ──────────────────────────────────────────────
 
@@ -272,6 +278,8 @@ class DepthPipelineApp:
     # ── Export ───────────────────────────────────────────────────────
 
     def _show_export(self, original, result):
+        self.export_placeholder.pack_forget()
+
         orig_thumb = original.copy()
         orig_thumb.thumbnail((PREVIEW_MAX, PREVIEW_MAX))
         tk_orig = ImageTk.PhotoImage(orig_thumb)
@@ -295,6 +303,7 @@ class DepthPipelineApp:
         self.path_frame.pack_forget()
         self.save_btn.pack_forget()
         self.save_btn.config(state=tk.DISABLED, text="保存文件")
+        self.export_placeholder.pack(expand=True, pady=30)
 
     def _browse_save_path(self):
         current = self.path_var.get()
