@@ -1,0 +1,11 @@
+model:
+  name: "prs-eth/marigold-depth-v1-1"
+  torch_dtype: "float16"
+  device: "cuda"
+
+inference:
+  ensemble_size: 5
+  denoising_steps: 10
+
+postprocess:
+  gaussian_radius: 2

@@ -1,0 +1,9 @@
+torch>=2.0.0
+diffusers>=0.25.0
+transformers
+accelerate
+Pillow
+numpy
+scipy
+pyyaml
+tkinterdnd2
