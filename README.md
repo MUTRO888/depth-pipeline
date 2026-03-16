@@ -10,42 +10,20 @@
 | GPU | NVIDIA GPU，显存 ≥ 4GB，支持 CUDA |
 | Python | 3.10+ |
 
-## 安装步骤
+## 快速开始（Windows，一键复制）
 
-### 1. 克隆仓库
+打开 PowerShell，粘贴以下命令：
 
-```bash
-git clone https://github.com/sonianmu/depth-pipeline.git
-cd depth-pipeline
+```powershell
+git clone https://github.com/MUTRO888/depth-pipeline.git && cd depth-pipeline && python -m venv venv && venv\Scripts\activate && pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -r requirements.txt && python app.py
 ```
 
-### 2. 创建虚拟环境（推荐）
+> **首次运行会自动下载 Marigold 深度估计模型（约 1.5GB），下载后缓存到本地，后续可离线使用。**
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-```
+之后再次运行只需：
 
-### 3. 安装 PyTorch（CUDA 版本）
-
-根据你的 CUDA 版本，前往 [PyTorch 官网](https://pytorch.org/get-started/locally/) 获取安装命令。例如：
-
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-```
-
-### 4. 安装其他依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-> **注意：** 首次运行时，程序会自动从 Hugging Face 下载 Marigold 深度估计模型（约 1.5GB），下载后缓存到本地，后续可离线使用。
-
-## 运行方式
-
-```bash
-python app.py
+```powershell
+cd depth-pipeline && venv\Scripts\activate && python app.py
 ```
 
 启动后出现图形界面，操作步骤：
