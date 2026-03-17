@@ -7,6 +7,7 @@ from steps.relief_enhance import ReliefEnhancer
 from utils.image_io import load_image
 from utils.postprocess import fuse_layers
 from utils.civitai_downloader import download_civitai_lora
+from utils.preprocess import preprocess_for_depth
 import torch
 
 
@@ -48,8 +49,17 @@ class DepthPipeline:
         image = load_image(image_path)
         original_size = image.size
 
+        # --- V4 Preprocessing (CPU) ---
+        update("Stage 1a/2: 正在进行图像几何纠偏预处理(去高光+光照均衡)...")
+        if "preprocess" not in self.config:
+            self.config["preprocess"] = {"remove_specular": True, "normalize_illumination": True}
+        
+        image_np = np.array(image.convert("RGB"))
+        preprocessed_np = preprocess_for_depth(image_np, self.config)
+        preprocessed_image = Image.fromarray(preprocessed_np)
+
         # --- Stage 1: Depth Estimation (GPU) ---
-        update("正在加载深度模型...")
+        update("Stage 1b/2: 正在分析全局深度...")
         cfg = self.config["model"]
         self.depth_estimator = DepthEstimator(
             model_name=cfg["name"],
@@ -57,10 +67,10 @@ class DepthPipeline:
             device=cfg["device"],
         )
         
-        update("Stage 1/2: 正在分析全局深度...")
         inf_cfg = self.config["inference"]
+        # Feeding PREPROCESSED image to Marigold
         depth_arr = self.depth_estimator.estimate(
-            image,
+            preprocessed_image,
             ensemble_size=inf_cfg["ensemble_size"],
             denoising_steps=inf_cfg["denoising_steps"],
             status_callback=status_callback,

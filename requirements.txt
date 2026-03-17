@@ -9,3 +9,4 @@ pyyaml
 tkinterdnd2
 controlnet-aux
 tqdm
+opencv-python-headless

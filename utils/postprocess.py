@@ -1,6 +1,42 @@
 import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter
+
+def guided_filter(guide, src, radius, epsilon):
+    """
+    Pure NumPy implementation of Guided Filter.
+    guide: 2D numpy array [0,1]
+    src: 2D numpy array [0,1]
+    radius: int
+    epsilon: float
+    """
+    from scipy.ndimage import uniform_filter
+    
+    I = guide.astype(np.float64)
+    p = src.astype(np.float64)
+    
+    size = int(2 * radius + 1)
+    
+    N = uniform_filter(np.ones_like(I), size=size)
+    
+    mean_I = uniform_filter(I, size=size) / N
+    mean_p = uniform_filter(p, size=size) / N
+    mean_Ip = uniform_filter(I * p, size=size) / N
+    
+    cov_Ip = mean_Ip - mean_I * mean_p
+    
+    mean_II = uniform_filter(I * I, size=size) / N
+    var_I = mean_II - mean_I * mean_I
+    
+    a = cov_Ip / (var_I + epsilon)
+    b = mean_p - a * mean_I
+    
+    mean_a = uniform_filter(a, size=size) / N
+    mean_b = uniform_filter(b, size=size) / N
+    
+    q = mean_a * I + mean_b
+    return q
 
 
 def process_depth(depth_map, gaussian_radius=2):
@@ -33,15 +69,14 @@ def process_depth(depth_map, gaussian_radius=2):
 
     return Image.fromarray(result, mode="L")
 
-def fuse_layers(depth_map, original_image, lora_relief=None, detail_strength=1.0, relief_strength=0.5, gaussian_radius=2):
+def fuse_layers(depth_map, original_image, lora_relief=None, detail_strength=1.0, relief_strength=0.5, gaussian_radius=2, guided_radius=None, guided_eps=1e-3):
     """
-    Frequency-Separation Fusion for CNC Relief Carving.
+    Frequency-Separation Fusion for CNC Relief Carving (V4 Hybrid).
     
     Layer 1 (Depth base): Marigold depth map provides global 3D structure.
-    Layer 2 (Surface detail): Original image grayscale high-pass filter extracts
-                              wrinkles, folds, facial features, clothing textures
-                              directly from the photograph's luminance.
-    Layer 3 (Micro-texture): Optional SD+LoRA overlay for additional surface grain.
+    Layer 2 (Surface detail): Guided Filter extracts crisp micro-texture directly from Original Image,
+                              rejecting lighting artifacts inconsistent with depth.
+    Layer 3 (Micro-texture): Optional SD+LoRA overlay.
     
     Args:
         depth_map: raw depth from Marigold (numpy array, float)
@@ -70,27 +105,26 @@ def fuse_layers(depth_map, original_image, lora_relief=None, detail_strength=1.0
     depth_norm = 1.0 - depth_norm
     
     # --- 2. Extract surface detail from ORIGINAL IMAGE ---
-    # Convert to grayscale and resize to match depth map dimensions
     gray = original_image.convert("L")
     if gray.size != (W, H):
         gray = gray.resize((W, H), Image.Resampling.LANCZOS)
     
     gray_arr = np.array(gray).astype(np.float64) / 255.0
     
-    # Multi-scale high-pass extraction (3 octaves for maximum detail coverage)
-    # Small sigma: captures fine details (hair strands, tiny wrinkles, pores)
-    # Medium sigma: captures mid details (clothing folds, facial features)
-    # Large sigma: captures broad surface undulations
-    sigma_fine = max(H, W) * 0.005    # ~0.5% of image size
-    sigma_medium = max(H, W) * 0.02   # ~2% of image size
-    sigma_broad = max(H, W) * 0.05    # ~5% of image size
+    # Depth-weighted masking
+    detail_mask = depth_norm  # 1.0 on raised surfaces, 0.0 on background
     
-    highpass_fine = gray_arr - gaussian_filter(gray_arr, sigma=sigma_fine)
-    highpass_medium = gray_arr - gaussian_filter(gray_arr, sigma=sigma_medium)
-    highpass_broad = gray_arr - gaussian_filter(gray_arr, sigma=sigma_broad)
+    # V4: Use Guided Filter instead of naive Gaussian highpass
+    # The depth map acts as the guide. The guided filter preserves the structure of depth_norm
+    # while fitting the intensities of gray_arr.
+    # The residual reveals pure textures that don't belong to the gross geometry.
+    if guided_radius is None:
+        guided_radius = max(8, int(max(H, W) * 0.015)) # ~1.5% of max dimension
+        
+    gf_base = guided_filter(guide=depth_norm, src=gray_arr, radius=guided_radius, epsilon=guided_eps)
+    detail = gray_arr - gf_base
     
-    # Combine all octaves with decreasing weight (fine detail is most important for relief)
-    combined_detail = (highpass_fine * 0.5) + (highpass_medium * 0.35) + (highpass_broad * 0.15)
+    combined_detail = detail * detail_mask
     
     # --- 3. SD LoRA micro-texture (if available) ---
     lora_detail = np.zeros((H, W))
@@ -100,13 +134,11 @@ def fuse_layers(depth_map, original_image, lora_relief=None, detail_strength=1.0
             lora_pil = lora_pil.resize((W, H), Image.Resampling.LANCZOS)
         lora_arr = np.array(lora_pil).astype(np.float64) / 255.0
         
-        # High-pass the LoRA output: only keep its unique micro-textures
-        lora_lowfreq = gaussian_filter(lora_arr, sigma=sigma_medium)
-        lora_detail = (lora_arr - lora_lowfreq) * relief_strength
+        lora_lowfreq = gaussian_filter(lora_arr, sigma=max(H, W) * 0.012)
+        lora_detail = (lora_arr - lora_lowfreq) * relief_strength * detail_mask
     
     # --- 4. ADDITIVE FUSION ---
-    # Depth provides the 3D shape base.
-    # High-pass detail from original image is ADDED on top (not averaged).
+    # Depth provides the correct 3D shape. Details are overlaid as surface texture only.
     fused = depth_norm + (combined_detail * detail_strength) + lora_detail
     
     # --- 5. Auto-stretch to full 0~255 range ---

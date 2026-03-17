@@ -4,15 +4,22 @@ model:
   device: "cuda"
 
 sd_relief:
-  base_model: "runwayml/stable-diffusion-v1-5"
-  controlnet: "lllyasviel/control_v11f1p_sd15_depth"
+  use_sd_relief: false
+  model_id: "runwayml/stable-diffusion-v1-5"
   lora_path: "auto"
-  lora_weight: 0.8
-  prompt: "BAS-RELIEF, grayscale 3D relief, desaturated, monochrome, gypsum engraving, high detail surface texture, detailed edges"
-  negative_prompt: "color, colorful, painting, flat, 2d, cartoon, blurry, smooth, noise"
-  strength: 0.45
-  guidance_scale: 7.5
-  num_inference_steps: 30
+  lora_scale: 0.8
+  prompt: "intricate micro details, subtle surface texture, high resolution, relief carving"
+  negative_prompt: "smooth, blurry, deep shadows, noisy, high contrast"
+  num_inference_steps: 20
+  guidance_scale: 7.0
+
+preprocess:
+  # Geometry Correction Settings (CPU)
+  remove_specular: true
+  specular_v_threshold: 220
+  specular_s_threshold: 50
+  normalize_illumination: true
+  retinex_sigmas: [15, 80, 250]
 
 inference:
   ensemble_size: 5
@@ -22,5 +29,7 @@ postprocess:
   gaussian_radius: 2
 
 fusion:
-  detail_strength: 1.5
+  detail_strength: 0.8
   relief_strength: 0.5
+  guided_radius: null    # If null, automatically uses ~1.5% of image size
+  guided_eps: 0.001
