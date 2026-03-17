@@ -17,9 +17,11 @@ def normal_to_height(normal_map):
     # Extract components corresponding to Nx, Ny, Nz
     # Typically, normal maps from models map X right, Y up/down, Z pointing at viewer
     # We must ensure Nz > 0 to avoid division by zero.
-    Nx = normal_map[..., 0]
-    Ny = normal_map[..., 1]
-    Nz = np.clip(normal_map[..., 2], 1e-5, 1.0)
+    Nx = normal_map[:, :, 0]
+    Ny = normal_map[:, :, 1]
+    Nz = normal_map[:, :, 2]
+    # Ensure Nz > 0 to avoid division by zero
+    Nz = np.clip(Nz, 1e-5, 1.0)
     
     # Derived gradients assuming Surface = (x, y, Z(x,y))
     # Normal N ∝ (-Zx, -Zy, 1) -> Zx = -Nx/Nz, Zy = -Ny/Nz
@@ -33,8 +35,8 @@ def normal_to_height(normal_map):
     div = np.zeros((H, W))
     
     # Forward difference for divergence
-    div[:, :-1] += Zx[:, 1:] - Zx[:, :-1]
-    div[:-1, :] += Zy[1:, :] - Zy[:-1, :]
+    div[:, :-1] += (Zx[:, 1:] - Zx[:, :-1])
+    div[:-1, :] += (Zy[1:, :] - Zy[:-1, :])
     
     # Setup the sparse linear system: A * Z_flat = div_flat
     # A is the Laplacian operator matrix

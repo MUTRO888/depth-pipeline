@@ -31,13 +31,35 @@ class NormalEstimator:
             
             # Predict returns a normalized standard Normal space in [-1, 1] mapped to [0, 1] image space
             # We need to extract the raw numpy array to accurately integrate
-            predictions = output.prediction  # typically shape (1, 3, H, W)
+            predictions = output.prediction  # typically shape (1, 3, H, W) or (B, H, W, 3) 
             
-            # Convert to (H, W, 3) and [-1, 1] range
+            # Diffusers output format varying:
             if torch.is_tensor(predictions):
-                normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+                p_np = predictions.cpu().numpy()
             else:
-                normals_map = np.array(predictions).squeeze().transpose(1, 2, 0)
+                p_np = np.array(predictions)
+                
+            # Check shape to adapt correctly
+            if p_np.ndim == 4 and p_np.shape[1] == 3:
+                # (1, 3, H, W)
+                normals_map = p_np.squeeze(0).transpose(1, 2, 0)
+            elif p_np.ndim == 4 and p_np.shape[-1] == 3:
+                # (1, H, W, 3)
+                normals_map = p_np.squeeze(0)
+            elif p_np.ndim == 3 and p_np.shape[0] == 3:
+                # (3, H, W)
+                normals_map = p_np.transpose(1, 2, 0)
+            elif p_np.ndim == 3 and p_np.shape[-1] == 3:
+                # (H, W, 3)
+                normals_map = p_np
+            else:
+                # Fallback forced reshape if possible
+                normals_map = p_np.squeeze()
+                if normals_map.ndim == 3 and normals_map.shape[0] == 3:
+                    normals_map = normals_map.transpose(1, 2, 0)
+            
+            # Print for debug
+            print(f"DEBUG: Processed normals_map shape: {normals_map.shape}")
             
             # Extract height via Poisson Equation
             if status_callback:
@@ -64,9 +86,24 @@ class NormalEstimator:
             
             predictions = output.prediction
             if torch.is_tensor(predictions):
-                normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+                p_np = predictions.cpu().numpy()
             else:
-                normals_map = np.array(predictions).squeeze().transpose(1, 2, 0)
+                p_np = np.array(predictions)
+                
+            if p_np.ndim == 4 and p_np.shape[1] == 3:
+                normals_map = p_np.squeeze(0).transpose(1, 2, 0)
+            elif p_np.ndim == 4 and p_np.shape[-1] == 3:
+                normals_map = p_np.squeeze(0)
+            elif p_np.ndim == 3 and p_np.shape[0] == 3:
+                normals_map = p_np.transpose(1, 2, 0)
+            elif p_np.ndim == 3 and p_np.shape[-1] == 3:
+                normals_map = p_np
+            else:
+                normals_map = p_np.squeeze()
+                if normals_map.ndim == 3 and normals_map.shape[0] == 3:
+                    normals_map = normals_map.transpose(1, 2, 0)
+                    
+            print(f"DEBUG fallback: Processed normals_map shape: {normals_map.shape}")
             
             if status_callback:
                 status_callback("正在通过泊松方程重建微细节高度...")
