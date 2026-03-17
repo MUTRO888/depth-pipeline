@@ -6,6 +6,7 @@ class DepthEstimator:
     """Marigold-based monocular depth estimation with OOM fallback."""
 
     def __init__(self, model_name, torch_dtype="float16", device="cuda"):
+        self.device = device
         dtype = torch.float16 if torch_dtype == "float16" else torch.float32
         self.pipe = MarigoldDepthPipeline.from_pretrained(
             model_name,
@@ -42,3 +43,11 @@ class DepthEstimator:
                 ensemble_size=1,
             )
             return output.prediction.squeeze()
+            
+    def unload(self):
+        """Releases the model from VRAM."""
+        if hasattr(self, 'pipe') and self.pipe is not None:
+            del self.pipe
+            self.pipe = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

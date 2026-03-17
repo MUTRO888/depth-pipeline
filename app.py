@@ -2,6 +2,7 @@ import os
 import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import yaml
 from PIL import Image, ImageTk
 import threading
 
@@ -49,8 +50,13 @@ class DepthPipelineApp:
 
         self._build_upload_section(main)
         ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
+        self._build_settings_section(main)
+        ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
         self._build_status_section(main)
         ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
         self._build_export_section(main)
 
     def _build_upload_section(self, parent):
@@ -80,15 +86,77 @@ class DepthPipelineApp:
             self.drop_zone.drop_target_register(DND_FILES)
             self.drop_zone.dnd_bind("<<Drop>>", self._on_drop)
 
-        # File info
-        self.file_info_label = ttk.Label(frame, text="")
-        self.file_info_label.pack(pady=2)
+        # Info row + Start button
+        bottom_frame = ttk.Frame(frame)
+        bottom_frame.pack(fill=tk.X, pady=5)
+        
+        self.file_info_label = ttk.Label(bottom_frame, text="")
+        self.file_info_label.pack(side=tk.LEFT)
 
-        # Start button
         self.start_btn = ttk.Button(
-            frame, text="开始处理", command=self._start_processing, state=tk.DISABLED
+            bottom_frame, text="开始处理 (三路融合)", command=self._start_processing, state=tk.DISABLED
         )
-        self.start_btn.pack(pady=5)
+        self.start_btn.pack(side=tk.RIGHT)
+
+    def _build_settings_section(self, parent):
+        frame = ttk.LabelFrame(parent, text="融合权重设置", padding=10)
+        frame.pack(fill=tk.X)
+        
+        # Load initial weights from config if available
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+                fw = cfg.get("fusion", {})
+                d_w = fw.get("depth_weight", 0.40)
+                n_w = fw.get("normal_weight", 0.45)
+                l_w = fw.get("relief_weight", 0.15)
+        except Exception:
+            d_w, n_w, l_w = 0.40, 0.45, 0.15
+            
+        # Variables
+        self.var_depth = tk.DoubleVar(value=d_w)
+        self.var_normal = tk.DoubleVar(value=n_w)
+        self.var_relief = tk.DoubleVar(value=l_w)
+        
+        def on_slider_change(*args):
+            d = self.var_depth.get()
+            n = self.var_normal.get()
+            l = self.var_relief.get()
+            total = d + n + l
+            if total > 0:
+                self.lbl_d_val.config(text=f"{d/total*100:.1f}%")
+                self.lbl_n_val.config(text=f"{n/total*100:.1f}%")
+                self.lbl_l_val.config(text=f"{l/total*100:.1f}%")
+                
+        # Depth param
+        row1 = ttk.Frame(frame)
+        row1.pack(fill=tk.X, pady=2)
+        ttk.Label(row1, text="大尺度深度比重 (基底立体感):", width=25).pack(side=tk.LEFT)
+        s1 = ttk.Scale(row1, from_=0.0, to=1.0, variable=self.var_depth, orient=tk.HORIZONTAL, command=on_slider_change)
+        s1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+        self.lbl_d_val = ttk.Label(row1, text="-", width=6)
+        self.lbl_d_val.pack(side=tk.LEFT)
+        
+        # Normal param
+        row2 = ttk.Frame(frame)
+        row2.pack(fill=tk.X, pady=2)
+        ttk.Label(row2, text="中尺度细节比重 (五官、衣纹):", width=25).pack(side=tk.LEFT)
+        s2 = ttk.Scale(row2, from_=0.0, to=1.0, variable=self.var_normal, orient=tk.HORIZONTAL, command=on_slider_change)
+        s2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+        self.lbl_n_val = ttk.Label(row2, text="-", width=6)
+        self.lbl_n_val.pack(side=tk.LEFT)
+        
+        # Relief param
+        row3 = ttk.Frame(frame)
+        row3.pack(fill=tk.X, pady=2)
+        ttk.Label(row3, text="微尺度纹理比重 (发丝、表面质感):", width=25).pack(side=tk.LEFT)
+        s3 = ttk.Scale(row3, from_=0.0, to=1.0, variable=self.var_relief, orient=tk.HORIZONTAL, command=on_slider_change)
+        s3.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+        self.lbl_l_val = ttk.Label(row3, text="-", width=6)
+        self.lbl_l_val.pack(side=tk.LEFT)
+        
+        on_slider_change()
 
     def _build_status_section(self, parent):
         frame = ttk.LabelFrame(parent, text="处理状态", padding=10)
@@ -226,12 +294,23 @@ class DepthPipelineApp:
             config_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "config.yaml"
             )
-
+            
+            # Save current slider settings to config memory before run 
+            # Note: We don't overwrite the original YAML back to disk to save lifetime,
+            # but we pass the new weights into the internal config object.
+            
             def status_cb(msg):
                 self.root.after(0, lambda m=msg: self._update_status(m))
 
             if self.pipeline is None:
                 self.pipeline = DepthPipeline(config_path)
+                
+            # Update GUI weights into pipeline instance before processing
+            if "fusion" not in self.pipeline.config:
+                self.pipeline.config["fusion"] = {}
+            self.pipeline.config["fusion"]["depth_weight"] = self.var_depth.get()
+            self.pipeline.config["fusion"]["normal_weight"] = self.var_normal.get()
+            self.pipeline.config["fusion"]["relief_weight"] = self.var_relief.get()
 
             original, result = self.pipeline.process(
                 self.image_path, status_callback=status_cb
@@ -245,11 +324,11 @@ class DepthPipelineApp:
 
     def _update_status(self, msg):
         self.status_label.config(text=msg)
-        if "正在分析图片深度" in msg:
+        if "分析" in msg or "提取法线" in msg or "渲染表面" in msg:
             self._show_progress()
-        elif "显存不足" in msg:
-            # keep progress bar running during OOM retry
-            pass
+        elif "显存不足" in msg or "首次运行" in msg or "正在下载" in msg:
+            # keep progress bar running
+            self._show_progress()
         else:
             self._hide_progress()
 

@@ -7,3 +7,5 @@ numpy
 scipy
 pyyaml
 tkinterdnd2
+controlnet-aux
+tqdm
