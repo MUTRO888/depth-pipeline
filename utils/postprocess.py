@@ -60,7 +60,9 @@ def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 
         
     # Invert baseline: normally closer objects (high depth) are white (1.0)
     # The existing process_depth function inverted things so big depth value = white
-    # Let's ensure everything is consistent: 1.0 = Highest Point (White)
+    # Actually, in Marigold, typically smaller values mean closer (depth).
+    # So we invert the depth map so that 1.0 = Highest Point (White = Near), 0.0 = Background
+    depth_norm = 1.0 - depth_norm
     
     # 2. Normalize and structure Normal Height
     normal_norm = normal_height.astype(np.float64)
@@ -73,13 +75,15 @@ def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 
     # 3. Handle LoRA Relief if it exists
     if lora_relief is not None:
         lora_arr = np.array(lora_relief).astype(np.float64)
-        # Note: LoRA usually outputs actual images, so lighter = higher
+        # Note: LoRA usually outputs actual images, so lighter = higher (1.0)
         lora_norm = lora_arr / 255.0
         
         w_d, w_n, w_l = weights
         total_w = w_d + w_n + w_l
         w_d, w_n, w_l = w_d/total_w, w_n/total_w, w_l/total_w
         
+        # Enhanced blending: Instead of flat addition, we can use a soft light or screen overlay, 
+        # but weighted addition is safest for CNC routing to avoid clipping.
         fused = (depth_norm * w_d) + (normal_norm * w_n) + (lora_norm * w_l)
     else:
         w_d, w_n = weights[0], weights[1]
@@ -88,13 +92,27 @@ def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 
         
         fused = (depth_norm * w_d) + (normal_norm * w_n)
 
-    # 4. Scale to 0-255 
-    # Since we want white = high point, and our normalized inputs already follow
-    # higher value = closer, we just scale.
+    # 4. Auto-Stretch (Histogram Expansion)
+    # The weighted addition inherently squashes dynamic range (e.g. from 0~1 to 0.2~0.8)
+    # This guarantees the CNC will carve to the maximum possible depth.
+    f_min, f_max = fused.min(), fused.max()
+    if f_max > f_min:
+        fused = (fused - f_min) / (f_max - f_min)
+        
     fused_255 = fused * 255.0
     
-    # 5. Gaussian smooth
-    smoothed = gaussian_filter(fused_255, sigma=gaussian_radius)
+    # 5. Detail Boosting (Unsharp Masking)
+    # User requested to "pull up the intensity" of details automatically.
+    # By extracting the high-frequency components (Normals and SD textures) and amplifying them,
+    # we make the relief exponentially sharper.
+    blurred_base = gaussian_filter(fused_255, sigma=3.0)
+    high_frequency_details = fused_255 - blurred_base
+    detail_boost_factor = 1.5 # Amplifies wrinkles, hair, and surface textures
+    sharpened = fused_255 + (high_frequency_details * detail_boost_factor)
+    
+    # 6. Final gentle denoising and clipping
+    # Only lightly smooth the fused map to kill pixel-noise, without destroying our boosted details.
+    smoothed = gaussian_filter(sharpened, sigma=max(0.5, gaussian_radius * 0.5))
     
     result = np.clip(smoothed, 0, 255).astype(np.uint8)
     return Image.fromarray(result, mode="L")
