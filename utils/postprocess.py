@@ -35,84 +35,109 @@ def process_depth(depth_map, gaussian_radius=2):
 
 def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 0.15), gaussian_radius=2):
     """
-    Combines layers from the triple-fusion pipeline.
+    Frequency-Separation Fusion for CNC Relief Carving.
     
-    Args:
-        depth_map: base depth from Marigold (numpy array or PIL Image)
-        normal_height: height map from Poisson integration of normals (numpy array)
-        lora_relief: micro-texture map from SD (PIL Image)
-        weights: tuple of (alpha, beta, gamma)
-        
-    Returns:
-        PIL Image: 8-bit grayscale BMP
+    Strategy (fundamentally different from weighted averaging):
+      - Depth layer = LOW-FREQUENCY BASE (overall 3D shape)
+      - Normal layer = HIGH-FREQUENCY DETAIL EXTRACTION (wrinkles, folds, facial features)
+      - SD LoRA layer = MICRO-TEXTURE OVERLAY (hair strands, fabric weave)
+    
+    The Normal and SD layers are high-pass filtered to extract ONLY the details
+    that the Depth layer is missing, then additively layered on top.
     """
-    # 1. Normalize and structure Depth Base
+    # --- 1. Prepare Depth Base ---
     if isinstance(depth_map, Image.Image):
         depth_arr = np.array(depth_map).astype(np.float64)
     else:
         depth_arr = depth_map.astype(np.float64)
+    
+    H_d, W_d = depth_arr.shape[:2]
         
     d_min, d_max = depth_arr.min(), depth_arr.max()
     if d_max > d_min:
         depth_norm = (depth_arr - d_min) / (d_max - d_min)
     else:
         depth_norm = np.zeros_like(depth_arr)
-        
-    # Invert baseline: normally closer objects (high depth) are white (1.0)
-    # The existing process_depth function inverted things so big depth value = white
-    # Actually, in Marigold, typically smaller values mean closer (depth).
-    # So we invert the depth map so that 1.0 = Highest Point (White = Near), 0.0 = Background
+    
+    # Invert: Marigold depth has small value = near. We want white(1.0) = near = high point.
     depth_norm = 1.0 - depth_norm
     
-    # 2. Normalize and structure Normal Height
-    normal_norm = normal_height.astype(np.float64)
-    n_min, n_max = normal_norm.min(), normal_norm.max()
-    if n_max > n_min:
-        normal_norm = (normal_norm - n_min) / (n_max - n_min)
+    # --- 2. Prepare Normal Height and extract its UNIQUE details ---
+    normal_arr = normal_height.astype(np.float64)
+    
+    # Resize normal to match depth if dimensions differ
+    if normal_arr.shape[:2] != (H_d, W_d):
+        from PIL import Image as PILImage
+        normal_pil = PILImage.fromarray(
+            ((normal_arr - normal_arr.min()) / (normal_arr.max() - normal_arr.min() + 1e-8) * 255).astype(np.uint8), 
+            mode="L"
+        )
+        normal_pil = normal_pil.resize((W_d, H_d), PILImage.Resampling.LANCZOS)
+        normal_arr = np.array(normal_pil).astype(np.float64) / 255.0
     else:
-        normal_norm = np.zeros_like(normal_norm)
-        
-    # 3. Handle LoRA Relief if it exists
+        n_min, n_max = normal_arr.min(), normal_arr.max()
+        if n_max > n_min:
+            normal_arr = (normal_arr - n_min) / (n_max - n_min)
+        else:
+            normal_arr = np.zeros_like(normal_arr)
+    
+    # HIGH-PASS FILTER: Extract details that exist in Normal but NOT in Depth.
+    # Large sigma = only the broadest shapes survive the blur.
+    # Subtracting the blur from the original gives us pure surface detail.
+    normal_blur_sigma = max(H_d, W_d) * 0.02  # ~2% of image size, adaptive
+    normal_lowfreq = gaussian_filter(normal_arr, sigma=normal_blur_sigma)
+    normal_detail = normal_arr - normal_lowfreq  # Pure high-frequency: wrinkles, edges, folds
+    
+    # The detail_strength controls how aggressively we carve surface details.
+    # weights[1] (normal_weight) now controls the INTENSITY of detail injection.
+    # Scale from 0~1 slider to a meaningful multiplier (0 = no detail, 1.0 = 3x amplification)
+    detail_strength = weights[1] * 3.0
+    
+    # --- 3. SD LoRA micro-texture (if available) ---
+    lora_detail = np.zeros_like(depth_norm)
     if lora_relief is not None:
         lora_arr = np.array(lora_relief).astype(np.float64)
-        # Note: LoRA usually outputs actual images, so lighter = higher (1.0)
+        if lora_arr.shape[:2] != (H_d, W_d):
+            lora_pil = Image.fromarray(lora_arr.astype(np.uint8), mode="L")
+            lora_pil = lora_pil.resize((W_d, H_d), Image.Resampling.LANCZOS)
+            lora_arr = np.array(lora_pil).astype(np.float64)
         lora_norm = lora_arr / 255.0
         
-        w_d, w_n, w_l = weights
-        total_w = w_d + w_n + w_l
-        w_d, w_n, w_l = w_d/total_w, w_n/total_w, w_l/total_w
+        # High-pass the LoRA output too: we only want its unique micro-textures
+        lora_lowfreq = gaussian_filter(lora_norm, sigma=normal_blur_sigma * 0.5)
+        lora_detail = lora_norm - lora_lowfreq
         
-        # Enhanced blending: Instead of flat addition, we can use a soft light or screen overlay, 
-        # but weighted addition is safest for CNC routing to avoid clipping.
-        fused = (depth_norm * w_d) + (normal_norm * w_n) + (lora_norm * w_l)
-    else:
-        w_d, w_n = weights[0], weights[1]
-        total_w = w_d + w_n
-        w_d, w_n = w_d/total_w, w_n/total_w
-        
-        fused = (depth_norm * w_d) + (normal_norm * w_n)
-
-    # 4. Auto-Stretch (Histogram Expansion)
-    # The weighted addition inherently squashes dynamic range (e.g. from 0~1 to 0.2~0.8)
-    # This guarantees the CNC will carve to the maximum possible depth.
+        lora_strength = weights[2] * 3.0
+        lora_detail = lora_detail * lora_strength
+    
+    # --- 4. ADDITIVE FUSION ---
+    # Base shape comes 100% from Depth (scaled by its weight for overall relief height)
+    # Details are ADDED on top, not averaged in.
+    base = depth_norm * weights[0] * 2.5  # Scale base to use more of 0~1 range
+    
+    fused = base + (normal_detail * detail_strength) + lora_detail
+    
+    # --- 5. Auto-stretch to full 0~255 range ---
     f_min, f_max = fused.min(), fused.max()
     if f_max > f_min:
         fused = (fused - f_min) / (f_max - f_min)
-        
+    
     fused_255 = fused * 255.0
     
-    # 5. Detail Boosting (Unsharp Masking)
-    # User requested to "pull up the intensity" of details automatically.
-    # By extracting the high-frequency components (Normals and SD textures) and amplifying them,
-    # we make the relief exponentially sharper.
-    blurred_base = gaussian_filter(fused_255, sigma=3.0)
-    high_frequency_details = fused_255 - blurred_base
-    detail_boost_factor = 1.5 # Amplifies wrinkles, hair, and surface textures
-    sharpened = fused_255 + (high_frequency_details * detail_boost_factor)
+    # --- 6. Multi-scale detail boost (Unsharp Mask at two scales) ---
+    # Fine scale: hair, tiny wrinkles
+    blur_fine = gaussian_filter(fused_255, sigma=1.0)
+    detail_fine = fused_255 - blur_fine
     
-    # 6. Final gentle denoising and clipping
-    # Only lightly smooth the fused map to kill pixel-noise, without destroying our boosted details.
-    smoothed = gaussian_filter(sharpened, sigma=max(0.5, gaussian_radius * 0.5))
+    # Medium scale: clothing folds, facial contours
+    blur_medium = gaussian_filter(fused_255, sigma=5.0)
+    detail_medium = fused_255 - blur_medium
+    
+    # Boost both scales
+    boosted = fused_255 + (detail_fine * 1.0) + (detail_medium * 0.5)
+    
+    # --- 7. Minimal smoothing (just kill single-pixel noise) ---
+    smoothed = gaussian_filter(boosted, sigma=0.5)
     
     result = np.clip(smoothed, 0, 255).astype(np.uint8)
     return Image.fromarray(result, mode="L")

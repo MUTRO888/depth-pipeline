@@ -123,16 +123,14 @@ class DepthPipelineApp:
             d = self.var_depth.get()
             n = self.var_normal.get()
             l = self.var_relief.get()
-            total = d + n + l
-            if total > 0:
-                self.lbl_d_val.config(text=f"{d/total*100:.1f}%")
-                self.lbl_n_val.config(text=f"{n/total*100:.1f}%")
-                self.lbl_l_val.config(text=f"{l/total*100:.1f}%")
+            self.lbl_d_val.config(text=f"{d*2.5:.1f}x")
+            self.lbl_n_val.config(text=f"{n*3.0:.1f}x")
+            self.lbl_l_val.config(text=f"{l*3.0:.1f}x")
                 
         # Depth param
         row1 = ttk.Frame(frame)
         row1.pack(fill=tk.X, pady=2)
-        ttk.Label(row1, text="大尺度深度比重 (基底立体感):", width=25).pack(side=tk.LEFT)
+        ttk.Label(row1, text="基底立体高度:", width=25).pack(side=tk.LEFT)
         s1 = ttk.Scale(row1, from_=0.0, to=1.0, variable=self.var_depth, orient=tk.HORIZONTAL, command=on_slider_change)
         s1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
         self.lbl_d_val = ttk.Label(row1, text="-", width=6)
@@ -141,7 +139,7 @@ class DepthPipelineApp:
         # Normal param
         row2 = ttk.Frame(frame)
         row2.pack(fill=tk.X, pady=2)
-        ttk.Label(row2, text="中尺度细节比重 (五官、衣纹):", width=25).pack(side=tk.LEFT)
+        ttk.Label(row2, text="表面细节强度 (五官、衣纹):", width=25).pack(side=tk.LEFT)
         s2 = ttk.Scale(row2, from_=0.0, to=1.0, variable=self.var_normal, orient=tk.HORIZONTAL, command=on_slider_change)
         s2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
         self.lbl_n_val = ttk.Label(row2, text="-", width=6)
@@ -150,7 +148,7 @@ class DepthPipelineApp:
         # Relief param
         row3 = ttk.Frame(frame)
         row3.pack(fill=tk.X, pady=2)
-        ttk.Label(row3, text="微尺度纹理比重 (发丝、表面质感):", width=25).pack(side=tk.LEFT)
+        ttk.Label(row3, text="微纹理强度 (发丝、质感):", width=25).pack(side=tk.LEFT)
         s3 = ttk.Scale(row3, from_=0.0, to=1.0, variable=self.var_relief, orient=tk.HORIZONTAL, command=on_slider_change)
         s3.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
         self.lbl_l_val = ttk.Label(row3, text="-", width=6)
