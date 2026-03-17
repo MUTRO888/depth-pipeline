@@ -3,15 +3,10 @@ model:
   torch_dtype: "float16"
   device: "cuda"
 
-normals_model:
-  name: "prs-eth/marigold-normals-v1-1"
-  torch_dtype: "float16"
-  device: "cuda"
-
 sd_relief:
   base_model: "runwayml/stable-diffusion-v1-5"
   controlnet: "lllyasviel/control_v11f1p_sd15_depth"
-  lora_path: "auto" # Set to 'auto' to trigger auto-download, or place a path here
+  lora_path: "auto"
   lora_weight: 0.8
   prompt: "BAS-RELIEF, grayscale 3D relief, desaturated, monochrome, gypsum engraving, high detail surface texture, detailed edges"
   negative_prompt: "color, colorful, painting, flat, 2d, cartoon, blurry, smooth, noise"
@@ -27,6 +22,5 @@ postprocess:
   gaussian_radius: 2
 
 fusion:
-  depth_weight: 0.40      
-  normal_weight: 0.45     
-  relief_weight: 0.15     
+  detail_strength: 1.5
+  relief_strength: 0.5

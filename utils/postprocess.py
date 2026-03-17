@@ -33,17 +33,23 @@ def process_depth(depth_map, gaussian_radius=2):
 
     return Image.fromarray(result, mode="L")
 
-def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 0.15), gaussian_radius=2):
+def fuse_layers(depth_map, original_image, lora_relief=None, detail_strength=1.0, relief_strength=0.5, gaussian_radius=2):
     """
     Frequency-Separation Fusion for CNC Relief Carving.
     
-    Strategy (fundamentally different from weighted averaging):
-      - Depth layer = LOW-FREQUENCY BASE (overall 3D shape)
-      - Normal layer = HIGH-FREQUENCY DETAIL EXTRACTION (wrinkles, folds, facial features)
-      - SD LoRA layer = MICRO-TEXTURE OVERLAY (hair strands, fabric weave)
+    Layer 1 (Depth base): Marigold depth map provides global 3D structure.
+    Layer 2 (Surface detail): Original image grayscale high-pass filter extracts
+                              wrinkles, folds, facial features, clothing textures
+                              directly from the photograph's luminance.
+    Layer 3 (Micro-texture): Optional SD+LoRA overlay for additional surface grain.
     
-    The Normal and SD layers are high-pass filtered to extract ONLY the details
-    that the Depth layer is missing, then additively layered on top.
+    Args:
+        depth_map: raw depth from Marigold (numpy array, float)
+        original_image: original input PIL Image (RGB)
+        lora_relief: optional micro-texture map from SD (PIL Image, grayscale)
+        detail_strength: multiplier for high-pass detail injection (0~3.0)
+        relief_strength: multiplier for SD LoRA texture injection (0~3.0)
+        gaussian_radius: final smoothing radius
     """
     # --- 1. Prepare Depth Base ---
     if isinstance(depth_map, Image.Image):
@@ -51,71 +57,57 @@ def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 
     else:
         depth_arr = depth_map.astype(np.float64)
     
-    H_d, W_d = depth_arr.shape[:2]
-        
+    H, W = depth_arr.shape[:2]
+    
+    # Normalize depth to [0, 1]
     d_min, d_max = depth_arr.min(), depth_arr.max()
     if d_max > d_min:
         depth_norm = (depth_arr - d_min) / (d_max - d_min)
     else:
         depth_norm = np.zeros_like(depth_arr)
     
-    # Invert: Marigold depth has small value = near. We want white(1.0) = near = high point.
+    # Invert: Marigold small value = near. We want white(1.0) = near = high point.
     depth_norm = 1.0 - depth_norm
     
-    # --- 2. Prepare Normal Height and extract its UNIQUE details ---
-    normal_arr = normal_height.astype(np.float64)
+    # --- 2. Extract surface detail from ORIGINAL IMAGE ---
+    # Convert to grayscale and resize to match depth map dimensions
+    gray = original_image.convert("L")
+    if gray.size != (W, H):
+        gray = gray.resize((W, H), Image.Resampling.LANCZOS)
     
-    # Resize normal to match depth if dimensions differ
-    if normal_arr.shape[:2] != (H_d, W_d):
-        from PIL import Image as PILImage
-        normal_pil = PILImage.fromarray(
-            ((normal_arr - normal_arr.min()) / (normal_arr.max() - normal_arr.min() + 1e-8) * 255).astype(np.uint8), 
-            mode="L"
-        )
-        normal_pil = normal_pil.resize((W_d, H_d), PILImage.Resampling.LANCZOS)
-        normal_arr = np.array(normal_pil).astype(np.float64) / 255.0
-    else:
-        n_min, n_max = normal_arr.min(), normal_arr.max()
-        if n_max > n_min:
-            normal_arr = (normal_arr - n_min) / (n_max - n_min)
-        else:
-            normal_arr = np.zeros_like(normal_arr)
+    gray_arr = np.array(gray).astype(np.float64) / 255.0
     
-    # HIGH-PASS FILTER: Extract details that exist in Normal but NOT in Depth.
-    # Large sigma = only the broadest shapes survive the blur.
-    # Subtracting the blur from the original gives us pure surface detail.
-    normal_blur_sigma = max(H_d, W_d) * 0.02  # ~2% of image size, adaptive
-    normal_lowfreq = gaussian_filter(normal_arr, sigma=normal_blur_sigma)
-    normal_detail = normal_arr - normal_lowfreq  # Pure high-frequency: wrinkles, edges, folds
+    # Multi-scale high-pass extraction (3 octaves for maximum detail coverage)
+    # Small sigma: captures fine details (hair strands, tiny wrinkles, pores)
+    # Medium sigma: captures mid details (clothing folds, facial features)
+    # Large sigma: captures broad surface undulations
+    sigma_fine = max(H, W) * 0.005    # ~0.5% of image size
+    sigma_medium = max(H, W) * 0.02   # ~2% of image size
+    sigma_broad = max(H, W) * 0.05    # ~5% of image size
     
-    # The detail_strength controls how aggressively we carve surface details.
-    # weights[1] (normal_weight) now controls the INTENSITY of detail injection.
-    # Scale from 0~1 slider to a meaningful multiplier (0 = no detail, 1.0 = 3x amplification)
-    detail_strength = weights[1] * 3.0
+    highpass_fine = gray_arr - gaussian_filter(gray_arr, sigma=sigma_fine)
+    highpass_medium = gray_arr - gaussian_filter(gray_arr, sigma=sigma_medium)
+    highpass_broad = gray_arr - gaussian_filter(gray_arr, sigma=sigma_broad)
+    
+    # Combine all octaves with decreasing weight (fine detail is most important for relief)
+    combined_detail = (highpass_fine * 0.5) + (highpass_medium * 0.35) + (highpass_broad * 0.15)
     
     # --- 3. SD LoRA micro-texture (if available) ---
-    lora_detail = np.zeros_like(depth_norm)
+    lora_detail = np.zeros((H, W))
     if lora_relief is not None:
-        lora_arr = np.array(lora_relief).astype(np.float64)
-        if lora_arr.shape[:2] != (H_d, W_d):
-            lora_pil = Image.fromarray(lora_arr.astype(np.uint8), mode="L")
-            lora_pil = lora_pil.resize((W_d, H_d), Image.Resampling.LANCZOS)
-            lora_arr = np.array(lora_pil).astype(np.float64)
-        lora_norm = lora_arr / 255.0
+        lora_pil = lora_relief
+        if lora_pil.size != (W, H):
+            lora_pil = lora_pil.resize((W, H), Image.Resampling.LANCZOS)
+        lora_arr = np.array(lora_pil).astype(np.float64) / 255.0
         
-        # High-pass the LoRA output too: we only want its unique micro-textures
-        lora_lowfreq = gaussian_filter(lora_norm, sigma=normal_blur_sigma * 0.5)
-        lora_detail = lora_norm - lora_lowfreq
-        
-        lora_strength = weights[2] * 3.0
-        lora_detail = lora_detail * lora_strength
+        # High-pass the LoRA output: only keep its unique micro-textures
+        lora_lowfreq = gaussian_filter(lora_arr, sigma=sigma_medium)
+        lora_detail = (lora_arr - lora_lowfreq) * relief_strength
     
     # --- 4. ADDITIVE FUSION ---
-    # Base shape comes 100% from Depth (scaled by its weight for overall relief height)
-    # Details are ADDED on top, not averaged in.
-    base = depth_norm * weights[0] * 2.5  # Scale base to use more of 0~1 range
-    
-    fused = base + (normal_detail * detail_strength) + lora_detail
+    # Depth provides the 3D shape base.
+    # High-pass detail from original image is ADDED on top (not averaged).
+    fused = depth_norm + (combined_detail * detail_strength) + lora_detail
     
     # --- 5. Auto-stretch to full 0~255 range ---
     f_min, f_max = fused.min(), fused.max()
@@ -124,20 +116,8 @@ def fuse_layers(depth_map, normal_height, lora_relief=None, weights=(0.4, 0.45, 
     
     fused_255 = fused * 255.0
     
-    # --- 6. Multi-scale detail boost (Unsharp Mask at two scales) ---
-    # Fine scale: hair, tiny wrinkles
-    blur_fine = gaussian_filter(fused_255, sigma=1.0)
-    detail_fine = fused_255 - blur_fine
-    
-    # Medium scale: clothing folds, facial contours
-    blur_medium = gaussian_filter(fused_255, sigma=5.0)
-    detail_medium = fused_255 - blur_medium
-    
-    # Boost both scales
-    boosted = fused_255 + (detail_fine * 1.0) + (detail_medium * 0.5)
-    
-    # --- 7. Minimal smoothing (just kill single-pixel noise) ---
-    smoothed = gaussian_filter(boosted, sigma=0.5)
+    # --- 6. Minimal smoothing (just kill single-pixel noise, preserve ALL detail) ---
+    smoothed = gaussian_filter(fused_255, sigma=max(0.3, gaussian_radius * 0.25))
     
     result = np.clip(smoothed, 0, 255).astype(np.uint8)
     return Image.fromarray(result, mode="L")

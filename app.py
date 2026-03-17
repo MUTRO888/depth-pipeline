@@ -99,60 +99,44 @@ class DepthPipelineApp:
         self.start_btn.pack(side=tk.RIGHT)
 
     def _build_settings_section(self, parent):
-        frame = ttk.LabelFrame(parent, text="融合权重设置", padding=10)
+        frame = ttk.LabelFrame(parent, text="浮雕细节设置", padding=10)
         frame.pack(fill=tk.X)
         
-        # Load initial weights from config if available
+        # Load initial values from config
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
         try:
             with open(config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
                 fw = cfg.get("fusion", {})
-                d_w = fw.get("depth_weight", 0.40)
-                n_w = fw.get("normal_weight", 0.45)
-                l_w = fw.get("relief_weight", 0.15)
+                ds = fw.get("detail_strength", 1.5)
+                rs = fw.get("relief_strength", 0.5)
         except Exception:
-            d_w, n_w, l_w = 0.40, 0.45, 0.15
+            ds, rs = 1.5, 0.5
             
-        # Variables
-        self.var_depth = tk.DoubleVar(value=d_w)
-        self.var_normal = tk.DoubleVar(value=n_w)
-        self.var_relief = tk.DoubleVar(value=l_w)
+        self.var_detail = tk.DoubleVar(value=ds)
+        self.var_relief = tk.DoubleVar(value=rs)
         
         def on_slider_change(*args):
-            d = self.var_depth.get()
-            n = self.var_normal.get()
-            l = self.var_relief.get()
-            self.lbl_d_val.config(text=f"{d*2.5:.1f}x")
-            self.lbl_n_val.config(text=f"{n*3.0:.1f}x")
-            self.lbl_l_val.config(text=f"{l*3.0:.1f}x")
+            self.lbl_detail_val.config(text=f"{self.var_detail.get():.1f}x")
+            self.lbl_relief_val.config(text=f"{self.var_relief.get():.1f}x")
                 
-        # Depth param
+        # Detail strength
         row1 = ttk.Frame(frame)
         row1.pack(fill=tk.X, pady=2)
-        ttk.Label(row1, text="基底立体高度:", width=25).pack(side=tk.LEFT)
-        s1 = ttk.Scale(row1, from_=0.0, to=1.0, variable=self.var_depth, orient=tk.HORIZONTAL, command=on_slider_change)
+        ttk.Label(row1, text="原图细节注入强度:", width=20).pack(side=tk.LEFT)
+        s1 = ttk.Scale(row1, from_=0.0, to=3.0, variable=self.var_detail, orient=tk.HORIZONTAL, command=on_slider_change)
         s1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
-        self.lbl_d_val = ttk.Label(row1, text="-", width=6)
-        self.lbl_d_val.pack(side=tk.LEFT)
+        self.lbl_detail_val = ttk.Label(row1, text="-", width=6)
+        self.lbl_detail_val.pack(side=tk.LEFT)
         
-        # Normal param
+        # Relief strength (SD LoRA)
         row2 = ttk.Frame(frame)
         row2.pack(fill=tk.X, pady=2)
-        ttk.Label(row2, text="表面细节强度 (五官、衣纹):", width=25).pack(side=tk.LEFT)
-        s2 = ttk.Scale(row2, from_=0.0, to=1.0, variable=self.var_normal, orient=tk.HORIZONTAL, command=on_slider_change)
+        ttk.Label(row2, text="SD微纹理注入强度:", width=20).pack(side=tk.LEFT)
+        s2 = ttk.Scale(row2, from_=0.0, to=3.0, variable=self.var_relief, orient=tk.HORIZONTAL, command=on_slider_change)
         s2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
-        self.lbl_n_val = ttk.Label(row2, text="-", width=6)
-        self.lbl_n_val.pack(side=tk.LEFT)
-        
-        # Relief param
-        row3 = ttk.Frame(frame)
-        row3.pack(fill=tk.X, pady=2)
-        ttk.Label(row3, text="微纹理强度 (发丝、质感):", width=25).pack(side=tk.LEFT)
-        s3 = ttk.Scale(row3, from_=0.0, to=1.0, variable=self.var_relief, orient=tk.HORIZONTAL, command=on_slider_change)
-        s3.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
-        self.lbl_l_val = ttk.Label(row3, text="-", width=6)
-        self.lbl_l_val.pack(side=tk.LEFT)
+        self.lbl_relief_val = ttk.Label(row2, text="-", width=6)
+        self.lbl_relief_val.pack(side=tk.LEFT)
         
         on_slider_change()
 
@@ -303,12 +287,11 @@ class DepthPipelineApp:
             if self.pipeline is None:
                 self.pipeline = DepthPipeline(config_path)
                 
-            # Update GUI weights into pipeline instance before processing
+            # Update GUI values into pipeline config before processing
             if "fusion" not in self.pipeline.config:
                 self.pipeline.config["fusion"] = {}
-            self.pipeline.config["fusion"]["depth_weight"] = self.var_depth.get()
-            self.pipeline.config["fusion"]["normal_weight"] = self.var_normal.get()
-            self.pipeline.config["fusion"]["relief_weight"] = self.var_relief.get()
+            self.pipeline.config["fusion"]["detail_strength"] = self.var_detail.get()
+            self.pipeline.config["fusion"]["relief_strength"] = self.var_relief.get()
 
             original, result = self.pipeline.process(
                 self.image_path, status_callback=status_cb
@@ -322,10 +305,9 @@ class DepthPipelineApp:
 
     def _update_status(self, msg):
         self.status_label.config(text=msg)
-        if "分析" in msg or "提取法线" in msg or "渲染表面" in msg:
+        if "分析" in msg or "渲染" in msg or "融合" in msg:
             self._show_progress()
         elif "显存不足" in msg or "首次运行" in msg or "正在下载" in msg:
-            # keep progress bar running
             self._show_progress()
         else:
             self._hide_progress()
