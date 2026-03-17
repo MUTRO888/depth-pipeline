@@ -1,5 +1,31 @@
 import os
 import sys
+import subprocess
+
+def _auto_install_deps():
+    """Automatically installs dependencies from requirements.txt if any core import fails."""
+    try:
+        import yaml
+        from PIL import Image
+        import scipy
+        import cv2
+        import torch
+        import diffusers
+    except ImportError as e:
+        print(f"[Auto-Install] 检测到缺少依赖库: {e}")
+        print("[Auto-Install] 正在为您自动安装 requirements.txt，请稍候...")
+        req_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+        if os.path.exists(req_path):
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+                print("[Auto-Install] 依赖安装完成！正在重启程序...")
+                os.execv(sys.executable, ['python'] + sys.argv)
+            except Exception as ex:
+                print(f"[Auto-Install] 自动安装失败: {ex}")
+                print(f"请手动在终端中运行: pip install -r {req_path}")
+                sys.exit(1)
+
+_auto_install_deps()
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import yaml
