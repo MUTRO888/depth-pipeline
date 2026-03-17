@@ -34,7 +34,10 @@ class NormalEstimator:
             predictions = output.prediction  # typically shape (1, 3, H, W)
             
             # Convert to (H, W, 3) and [-1, 1] range
-            normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+            if torch.is_tensor(predictions):
+                normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+            else:
+                normals_map = np.array(predictions).squeeze().transpose(1, 2, 0)
             
             # Extract height via Poisson Equation
             if status_callback:
@@ -60,7 +63,10 @@ class NormalEstimator:
             )
             
             predictions = output.prediction
-            normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+            if torch.is_tensor(predictions):
+                normals_map = predictions.squeeze().cpu().numpy().transpose(1, 2, 0)
+            else:
+                normals_map = np.array(predictions).squeeze().transpose(1, 2, 0)
             
             if status_callback:
                 status_callback("正在通过泊松方程重建微细节高度...")
