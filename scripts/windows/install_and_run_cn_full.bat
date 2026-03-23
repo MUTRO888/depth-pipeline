@@ -5,7 +5,7 @@ set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%\..\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
-set "TARGET_PYTHON=3.10"
+set "TARGET_PYTHON=3.12"
 set "VENV_DIR=%CD%\.venv"
 set "CONFIG_FILE=%CD%\config.full.yaml"
 set "LORA_FILE=%CD%\models\sd-relief\lora\relief_lora_438287.safetensors"

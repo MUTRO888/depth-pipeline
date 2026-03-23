@@ -22,7 +22,7 @@
 | RAM | 16GB |
 | GPU | NVIDIA RTX 3050 Laptop，专用显存 4GB |
 | CUDA 驱动 | 581.95（CUDA 12.x） |
-| Python | 3.10+ |
+| Python | 3.12+ |
 | 开发机 | Mac（仅写代码，不运行模型） |
 
 ---

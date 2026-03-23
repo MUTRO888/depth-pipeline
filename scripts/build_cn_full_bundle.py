@@ -51,8 +51,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--python-version",
-        default="310",
-        help="Target Python version for wheel download. Default: 310",
+        default="312",
+        help="Target Python version for wheel download. Default: 312",
     )
     parser.add_argument(
         "--implementation",
@@ -61,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--abi",
-        default="cp310",
+        default="cp312",
         help="Target ABI tag.",
     )
     parser.add_argument(

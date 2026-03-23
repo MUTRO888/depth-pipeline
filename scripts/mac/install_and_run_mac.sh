@@ -13,7 +13,7 @@ LORA_FILE="$PROJECT_DIR/models/sd-relief/lora/relief_lora_438287.safetensors"
 
 # ── 1. 检查 Python ──────────────────────────────────────────────
 PYTHON_EXE=""
-for cmd in python3.10 python3.11 python3.12 python3.13 python3; do
+for cmd in python3.12 python3.13 python3; do
   if command -v "$cmd" &>/dev/null; then
     PYTHON_EXE="$cmd"
     break
@@ -21,7 +21,7 @@ for cmd in python3.10 python3.11 python3.12 python3.13 python3; do
 done
 
 if [ -z "$PYTHON_EXE" ]; then
-  echo "[ERROR] 未找到 Python 3。请先安装 Python 3.10+："
+  echo "[ERROR] 未找到 Python 3。请先安装 Python 3.12+："
   echo "        brew install python@3.12"
   exit 1
 fi
@@ -29,8 +29,8 @@ fi
 PY_VER="$($PYTHON_EXE -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 PY_MAJOR="${PY_VER%%.*}"
 PY_MINOR="${PY_VER##*.}"
-if [ "$PY_MAJOR" -lt 3 ] || [ "$PY_MINOR" -lt 10 ]; then
-  echo "[ERROR] 需要 Python 3.10+，当前为 $PY_VER"
+if [ "$PY_MAJOR" -lt 3 ] || [ "$PY_MINOR" -lt 12 ]; then
+  echo "[ERROR] 需要 Python 3.12+，当前为 $PY_VER"
   exit 1
 fi
 echo "[OK] Python $PY_VER ($PYTHON_EXE)"

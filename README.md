@@ -8,7 +8,7 @@
 |------|------|
 | OS | Windows 11 |
 | GPU | NVIDIA GPU，显存 ≥ 4GB，支持 CUDA |
-| Python | 3.10+ |
+| Python | 3.12+ |
 
 ## 快速开始（Windows，全效果版）
 
@@ -92,7 +92,7 @@ postprocess:
 在项目根目录执行：
 
 ```bash
-python3 scripts/build_portable_folder.py --python-version 310
+python3 scripts/build_portable_folder.py --python-version 312
 ```
 
 生成结果默认在：
@@ -104,7 +104,7 @@ dist/depth-pipeline-offline-win/
 这个目录里会包含：
 
 - 项目源码
-- `wheels/`：Windows `win_amd64` + Python 3.10 的离线依赖包
+- `wheels/`：Windows `win_amd64` + Python 3.12 的离线依赖包
 - `models/`：已经下载好的模型目录
 - `config.offline.yaml`：离线专用配置
 - `install_and_run_offline.bat`：Windows 一条命令启动脚本
@@ -121,7 +121,7 @@ dist/depth-pipeline-offline-win/
 
 这个脚本会：
 
-1. 查找 **Python 3.10 x64**
+1. 查找 **Python 3.12 x64**
 2. 在当前目录创建 `.venv`
 3. 从本地 `wheels/` 离线安装依赖
 4. 强制启用离线模式
@@ -129,13 +129,13 @@ dist/depth-pipeline-offline-win/
 
 ### 3. 注意事项
 
-- 这个离线包默认目标是 **Windows x64 + Python 3.10**
-- Windows 上仍然需要你本地已经有 **Python 3.10 x64**
+- 这个离线包默认目标是 **Windows x64 + Python 3.12**
+- Windows 上仍然需要你本地已经有 **Python 3.12 x64**
 - GPU 驱动 / CUDA 运行环境仍然是 Windows 本机负责，不会从 Mac 自动迁移
 - 如果你想连可选的 SD 浮雕增强模型也一起打包，可在 Mac 上加：
 
 ```bash
-python3 scripts/build_portable_folder.py --python-version 310 --include-sd-relief
+python3 scripts/build_portable_folder.py --python-version 312 --include-sd-relief
 ```
 
 ## Windows 国内网络全效果方案
