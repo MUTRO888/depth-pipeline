@@ -285,8 +285,8 @@ def load_base_config() -> dict:
             "model": {
                 "name": "prs-eth/marigold-depth-v1-1",
                 "local_path": "models/marigold-depth-v1-1",
-                "torch_dtype": "float16",
-                "device": "cuda",
+                "torch_dtype": "auto",
+                "device": "auto",
             },
             "runtime": {"offline": False},
             "sd_relief": {

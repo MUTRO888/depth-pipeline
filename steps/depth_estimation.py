@@ -4,6 +4,7 @@ import torch
 from diffusers import MarigoldDepthPipeline
 
 from utils.model_source import resolve_model_source
+from utils.device import resolve_device, resolve_dtype, empty_cache, is_oom_error
 
 
 class DepthEstimator:
@@ -13,12 +14,12 @@ class DepthEstimator:
         self,
         model_config,
         project_dir,
-        torch_dtype="float16",
-        device="cuda",
+        torch_dtype="auto",
+        device="auto",
         offline=False,
     ):
-        self.device = device
-        dtype = torch.float16 if torch_dtype == "float16" else torch.float32
+        self.device = resolve_device(device)
+        dtype = resolve_dtype(torch_dtype, self.device)
         model_source = resolve_model_source(
             model_config,
             project_dir=project_dir,
@@ -38,7 +39,7 @@ class DepthEstimator:
         self.pipe = MarigoldDepthPipeline.from_pretrained(
             model_source,
             **load_kwargs,
-        ).to(device)
+        ).to(self.device)
 
     def estimate(self, image, ensemble_size=5, denoising_steps=10, status_callback=None):
         """
@@ -55,12 +56,10 @@ class DepthEstimator:
             return output.prediction.squeeze()
 
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-            if "out of memory" not in str(e).lower() and not isinstance(
-                e, torch.cuda.OutOfMemoryError
-            ):
+            if not is_oom_error(e):
                 raise
 
-            torch.cuda.empty_cache()
+            empty_cache(self.device)
             if status_callback:
                 status_callback("显存不足，已自动降低处理精度重试")
 
@@ -70,11 +69,10 @@ class DepthEstimator:
                 ensemble_size=1,
             )
             return output.prediction.squeeze()
-            
+
     def unload(self):
-        """Releases the model from VRAM."""
+        """Releases the model from GPU/accelerator memory."""
         if hasattr(self, 'pipe') and self.pipe is not None:
             del self.pipe
             self.pipe = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_cache(self.device)

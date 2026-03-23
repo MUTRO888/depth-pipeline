@@ -5,23 +5,25 @@ from diffusers import StableDiffusionControlNetImg2ImgPipeline, ControlNetModel,
 from PIL import Image
 
 from utils.model_source import resolve_model_source, resolve_path
+from utils.device import resolve_device, resolve_dtype, empty_cache, is_oom_error, generator_device
 
 class ReliefEnhancer:
     """Uses SD 1.5 with ControlNet Depth and Relief LoRA to add surface micro-textures."""
 
-    def __init__(self, config, project_dir, device="cuda", offline=False):
+    def __init__(self, config, project_dir, device="auto", offline=False):
         self.config = config
         self.project_dir = project_dir
-        self.device = device
+        self.device = resolve_device(device)
+        self.dtype = resolve_dtype("auto", self.device)
         self.offline = offline
         self.pipe = None
 
     def _load_model(self):
-        """Lazy load to save VRAM when not in use."""
+        """Lazy load to save memory when not in use."""
         if self.pipe is not None:
             return
 
-        dtype = torch.float16
+        dtype = self.dtype
         controlnet_source = resolve_model_source(
             self.config,
             project_dir=self.project_dir,
@@ -46,7 +48,7 @@ class ReliefEnhancer:
         if dtype == torch.float16:
             shared_load_kwargs["variant"] = "fp16"
             shared_load_kwargs["use_safetensors"] = True
-        
+
         # 1. Load ControlNet
         controlnet = ControlNetModel.from_pretrained(
             controlnet_source,
@@ -54,7 +56,7 @@ class ReliefEnhancer:
             local_files_only=local_controlnet,
             **shared_load_kwargs,
         )
-        
+
         # 2. Load Pipeline
         self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
             base_model_source,
@@ -64,10 +66,10 @@ class ReliefEnhancer:
             local_files_only=local_base_model,
             **shared_load_kwargs,
         ).to(self.device)
-        
+
         # Use UniPC for faster inference
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config)
-        
+
         # 3. Load LoRA if provided
         lora_path = self.config.get("lora_path")
         if lora_path and lora_path != "auto":
@@ -88,10 +90,10 @@ class ReliefEnhancer:
             PIL.Image (L): The enhanced structure as a grayscale map.
         """
         self._load_model()
-        
+
         if status_callback:
             status_callback("正在加载纹理生成模型...")
-            
+
         # SD 1.5 prefers 512x512 multiples. We should resize keeping aspect ratio roughly.
         w, h = original_image.size
         # A simple resizing strategy ensuring multiples of 8, max dimension ~768 to save VRAM
@@ -107,26 +109,27 @@ class ReliefEnhancer:
             new_h = int(h // 8 * 8)
             proc_image = original_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
             proc_depth = depth_map_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            
-        # We need an initial image for Img2Img. To strongly enforce depth, 
+
+        # We need an initial image for Img2Img. To strongly enforce depth,
         # we can pass the depth map as the initial image, or the original image
         # converted to grayscale. Passing original image lets SD see some contrast details.
         init_img = proc_image.convert("RGB")
         control_img = proc_depth.convert("RGB")
-        
+
         # Read parameters
         prompt = self.config.get("prompt", "BAS-RELIEF, grayscale 3D relief, desaturated")
         n_prompt = self.config.get("negative_prompt", "color, colorful")
         strength = self.config.get("strength", 0.45)
         guidance = self.config.get("guidance_scale", 7.5)
         steps = self.config.get("num_inference_steps", 30)
-        
+
         if status_callback:
             status_callback("正在渲染表面微纹理 (LoRA)...")
-            
-        # To make results reproducible since this is for industrial use, we can set a seed
-        generator = torch.Generator(device=self.device).manual_seed(42)
-        
+
+        # MPS does not support on-device Generator; use CPU generator instead
+        gen_dev = generator_device(self.device)
+        generator = torch.Generator(device=gen_dev).manual_seed(42)
+
         try:
             output = self.pipe(
                 prompt=prompt,
@@ -141,27 +144,28 @@ class ReliefEnhancer:
                     "scale": self.config.get("lora_scale", self.config.get("lora_weight", 0.8))
                 },
             )
-            
+
             result_rgb = output.images[0]
-            # Convert to grayscale 
+            # Convert to grayscale
             result_l = result_rgb.convert("L")
-            
+
             # Resize back to true original dimensions
             if result_l.size != (w, h):
                 result_l = result_l.resize((w, h), Image.Resampling.LANCZOS)
-                
+
             return result_l
-            
-        except torch.cuda.OutOfMemoryError:
+
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if not is_oom_error(e):
+                raise
             if status_callback:
-                status_callback("执行 LoRA 增强时显存不足，已跳过此步骤")
-            torch.cuda.empty_cache()
+                status_callback("执行 LoRA 增强时内存不足，已跳过此步骤")
+            empty_cache(self.device)
             return None
 
     def unload(self):
-        """Releases the model from VRAM."""
+        """Releases the model from GPU/accelerator memory."""
         if self.pipe is not None:
             del self.pipe
             self.pipe = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_cache(self.device)

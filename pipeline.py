@@ -114,6 +114,7 @@ class DepthPipeline:
             self.relief_enhancer = ReliefEnhancer(
                 self.config["sd_relief"],
                 project_dir=self.project_dir,
+                device=cfg["device"],
                 offline=self.offline,
             )
             
