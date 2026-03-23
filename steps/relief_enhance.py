@@ -44,10 +44,10 @@ class ReliefEnhancer:
         )
         local_controlnet = os.path.isdir(controlnet_source)
         local_base_model = os.path.isdir(base_model_source)
-        shared_load_kwargs = {}
-        if dtype == torch.float16:
-            shared_load_kwargs["variant"] = "fp16"
-            shared_load_kwargs["use_safetensors"] = True
+        shared_load_kwargs = {
+            "variant": "fp16",
+            "use_safetensors": True,
+        }
 
         # 1. Load ControlNet
         controlnet = ControlNetModel.from_pretrained(

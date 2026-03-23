@@ -33,9 +33,8 @@ class DepthEstimator:
         load_kwargs = {
             "torch_dtype": dtype,
             "local_files_only": local_files_only,
+            "variant": "fp16",
         }
-        if dtype == torch.float16:
-            load_kwargs["variant"] = "fp16"
         self.pipe = MarigoldDepthPipeline.from_pretrained(
             model_source,
             **load_kwargs,
