@@ -17,7 +17,7 @@ except ImportError:
 # Ensure sibling packages are importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pipeline import DepthPipeline
+from pipeline import DepthPipeline, get_config_path
 from utils.image_io import save_bmp
 
 THUMBNAIL_MAX = 250
@@ -103,7 +103,7 @@ class DepthPipelineApp:
         frame.pack(fill=tk.X)
         
         # Load initial values from config
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+        config_path = get_config_path()
         try:
             with open(config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
@@ -273,9 +273,7 @@ class DepthPipelineApp:
 
     def _process_worker(self):
         try:
-            config_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "config.yaml"
-            )
+            config_path = get_config_path()
             
             # Save current slider settings to config memory before run 
             # Note: We don't overwrite the original YAML back to disk to save lifetime,

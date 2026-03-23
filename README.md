@@ -10,20 +10,29 @@
 | GPU | NVIDIA GPU，显存 ≥ 4GB，支持 CUDA |
 | Python | 3.10+ |
 
-## 快速开始（Windows，一键复制）
+## 快速开始（Windows，全效果版）
 
-打开 PowerShell，粘贴以下命令：
+打开 PowerShell，依次执行：
 
 ```powershell
-git clone https://github.com/MUTRO888/depth-pipeline.git && cd depth-pipeline && python -m venv venv && venv\Scripts\activate && pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -r requirements.txt && python app.py
+git lfs install
+git clone https://github.com/MUTRO888/depth-pipeline.git
+cd depth-pipeline
+.\install_and_run_cn_full.bat
 ```
 
-> **首次运行会自动下载 Marigold 深度估计模型（约 1.5GB），下载后缓存到本地，后续可离线使用。**
+这个流程会：
+
+1. 从 GitHub 拉取项目和仓库中的 LoRA 文件
+2. 通过清华 PyPI 镜像安装依赖
+3. 通过 `HF-Mirror` 下载全部 Hugging Face 模型
+4. 直接按全效果配置启动程序
 
 之后再次运行只需：
 
 ```powershell
-cd depth-pipeline && venv\Scripts\activate && python app.py
+cd depth-pipeline
+.\install_and_run_cn_full.bat
 ```
 
 启动后出现图形界面，操作步骤：
@@ -68,3 +77,118 @@ postprocess:
 ```
 
 若网络受限无法自动下载模型，可手动下载后将 `model.name` 改为本地目录路径。
+
+## Windows 离线包（Mac 下载，Windows 直接运行）
+
+如果你的 **Windows 电脑不能访问外网**，不要在 Mac 上尝试“安装 Windows 依赖”。正确做法是：
+
+1. 在 Mac 上 **下载 Windows 专用 wheel 和模型文件**
+2. 将它们和项目源码一起整理进 **一个可搬运文件夹**
+3. 把这个文件夹拷到 Windows
+4. 在 Windows 里执行 **一条命令** 完成本地安装并启动
+
+### 1. 在 Mac 上生成离线包
+
+在项目根目录执行：
+
+```bash
+python3 scripts/build_portable_folder.py --python-version 310
+```
+
+生成结果默认在：
+
+```text
+dist/depth-pipeline-offline-win/
+```
+
+这个目录里会包含：
+
+- 项目源码
+- `wheels/`：Windows `win_amd64` + Python 3.10 的离线依赖包
+- `models/`：已经下载好的模型目录
+- `config.offline.yaml`：离线专用配置
+- `install_and_run_offline.bat`：Windows 一条命令启动脚本
+
+> 这一步使用的是 `pip download --platform win_amd64 ...`，也就是在 Mac 上下载 **给 Windows 用** 的依赖，而不是把 Mac 当前环境直接复制给 Windows。
+
+### 2. 拷到 Windows 后怎么运行
+
+把整个 `dist/depth-pipeline-offline-win` 文件夹复制到 Windows，然后进入该目录，执行：
+
+```powershell
+.\install_and_run_offline.bat
+```
+
+这个脚本会：
+
+1. 查找 **Python 3.10 x64**
+2. 在当前目录创建 `.venv`
+3. 从本地 `wheels/` 离线安装依赖
+4. 强制启用离线模式
+5. 使用本地 `models/` 直接启动 `app.py`
+
+### 3. 注意事项
+
+- 这个离线包默认目标是 **Windows x64 + Python 3.10**
+- Windows 上仍然需要你本地已经有 **Python 3.10 x64**
+- GPU 驱动 / CUDA 运行环境仍然是 Windows 本机负责，不会从 Mac 自动迁移
+- 如果你想连可选的 SD 浮雕增强模型也一起打包，可在 Mac 上加：
+
+```bash
+python3 scripts/build_portable_folder.py --python-version 310 --include-sd-relief
+```
+
+## Windows 国内网络全效果方案
+
+如果 Windows 可以访问 **GitHub + 国内互联网**，推荐直接从 GitHub 拉项目，然后固定走全量高效果链路。
+
+### GitHub 里需要准备什么
+
+仓库里需要包含：
+
+- `config.full.yaml`
+- `install_and_run_cn_full.bat`
+- `scripts/download_full_models.py`
+- `models/sd-relief/lora/relief_lora_438287.safetensors`
+
+其中 LoRA 文件体积较大，建议使用 **Git LFS** 存进仓库：
+
+```bash
+git lfs track "models/sd-relief/lora/*.safetensors"
+```
+
+本项目已经在 `.gitattributes` 中为该路径配置了 Git LFS。
+
+注意：
+
+- 当前仓库使用的 LoRA 是 Civitai `Depth map Lora - SD1.5`
+- 对应模型 / 版本是 `392921 @ 438287`
+- 建议先从 Civitai 页面手动下载 `.safetensors`，再提交到 GitHub
+
+### Windows 侧直接运行
+
+第一次使用时：
+
+```powershell
+git lfs install
+git clone https://github.com/MUTRO888/depth-pipeline.git
+cd depth-pipeline
+.\install_and_run_cn_full.bat
+```
+
+这个脚本会：
+
+1. 创建 `.venv`
+2. 通过清华 PyPI 镜像安装 Python 依赖
+3. 通过 `HF-Mirror` 下载全效果需要的 Hugging Face 模型
+4. 从仓库中的 LoRA 文件启用完整增强链路
+5. 使用 `config.full.yaml` 启动程序
+
+### 全效果模型清单
+
+- 深度模型：`prs-eth/marigold-depth-v1-1`
+- SD 基础模型：`runwayml/stable-diffusion-v1-5`
+- ControlNet：`lllyasviel/control_v11f1p_sd15_depth`
+- LoRA：Civitai `392921 @ 438287`
+
+这个方案默认就是全量增强版，不再以“最小可运行”作为目标。

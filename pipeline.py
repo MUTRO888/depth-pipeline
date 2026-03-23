@@ -1,3 +1,5 @@
+import os
+
 import yaml
 from PIL import Image
 import numpy as np
@@ -5,20 +7,38 @@ import numpy as np
 from steps.depth_estimation import DepthEstimator
 from steps.relief_enhance import ReliefEnhancer
 from utils.image_io import load_image
+from utils.model_source import read_offline_mode
 from utils.postprocess import fuse_layers
 from utils.civitai_downloader import download_civitai_lora
 from utils.preprocess import preprocess_for_depth
 import torch
 
 
+def get_config_path(config_path=None):
+    if config_path:
+        return os.path.abspath(config_path)
+
+    env_path = os.getenv("DEPTH_PIPELINE_CONFIG")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    if env_path:
+        if os.path.isabs(env_path):
+            return env_path
+        return os.path.abspath(os.path.join(project_dir, env_path))
+
+    return os.path.join(project_dir, "config.yaml")
+
+
 class DepthPipeline:
     """Orchestrates the full depth estimation pipeline."""
 
-    def __init__(self, config_path="config.yaml"):
-        with open(config_path, encoding="utf-8") as f:
+    def __init__(self, config_path=None):
+        self.config_path = get_config_path(config_path)
+        self.project_dir = os.path.dirname(self.config_path)
+        with open(self.config_path, encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
         self.depth_estimator = None
         self.relief_enhancer = None
+        self.offline = read_offline_mode(self.config.get("runtime"))
 
     def process(self, image_path, status_callback=None):
         """
@@ -36,14 +56,19 @@ class DepthPipeline:
             if status_callback:
                 status_callback(msg)
 
-        # Download LoRA if needed
         lora_cfg = self.config.get("sd_relief", {})
-        if lora_cfg.get("lora_path") == "auto":
-            lora_path = download_civitai_lora(status_callback=status_callback)
-            if lora_path:
-                self.config["sd_relief"]["lora_path"] = lora_path
-            else:
+        use_sd_relief = bool(lora_cfg.get("use_sd_relief", False))
+
+        if use_sd_relief and lora_cfg.get("lora_path") == "auto":
+            if self.offline:
+                update("离线模式：跳过浮雕 LoRA 自动下载")
                 self.config["sd_relief"]["lora_path"] = ""
+            else:
+                lora_path = download_civitai_lora(status_callback=status_callback)
+                if lora_path:
+                    self.config["sd_relief"]["lora_path"] = lora_path
+                else:
+                    self.config["sd_relief"]["lora_path"] = ""
                 
         # Step 0: Load image
         image = load_image(image_path)
@@ -62,9 +87,11 @@ class DepthPipeline:
         update("Stage 1b/2: 正在分析全局深度...")
         cfg = self.config["model"]
         self.depth_estimator = DepthEstimator(
-            model_name=cfg["name"],
+            model_config=cfg,
+            project_dir=self.project_dir,
             torch_dtype=cfg["torch_dtype"],
             device=cfg["device"],
+            offline=self.offline,
         )
         
         inf_cfg = self.config["inference"]
@@ -82,9 +109,13 @@ class DepthPipeline:
 
         # --- Stage 2: SD + LoRA Micro-Texture (Optional, GPU) ---
         lora_relief = None
-        if self.config.get("sd_relief", {}).get("lora_path"):
+        if use_sd_relief and self.config.get("sd_relief", {}).get("lora_path"):
             update("正在加载纹理增强模型 (SD+LoRA)...")
-            self.relief_enhancer = ReliefEnhancer(self.config["sd_relief"])
+            self.relief_enhancer = ReliefEnhancer(
+                self.config["sd_relief"],
+                project_dir=self.project_dir,
+                offline=self.offline,
+            )
             
             # Depth map as image for ControlNet conditioning
             d_norm = (depth_arr - depth_arr.min()) / (depth_arr.max() - depth_arr.min() + 1e-8)
@@ -119,4 +150,3 @@ class DepthPipeline:
 
         update("处理完成")
         return image, result
-

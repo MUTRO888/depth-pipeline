@@ -1,17 +1,25 @@
 model:
   name: "prs-eth/marigold-depth-v1-1"
+  local_path: "models/marigold-depth-v1-1"
   torch_dtype: "float16"
   device: "cuda"
 
+runtime:
+  offline: false
+
 sd_relief:
-  use_sd_relief: false
+  use_sd_relief: true
   model_id: "runwayml/stable-diffusion-v1-5"
-  lora_path: "auto"
-  lora_scale: 0.8
+  base_model_local_path: "models/sd-relief/stable-diffusion-v1-5"
+  controlnet_model_id: "lllyasviel/control_v11f1p_sd15_depth"
+  controlnet_local_path: "models/sd-relief/control_v11f1p_sd15_depth"
+  lora_path: "models/sd-relief/lora/relief_lora_438287.safetensors"
+  lora_scale: 0.85
   prompt: "intricate micro details, subtle surface texture, high resolution, relief carving"
   negative_prompt: "smooth, blurry, deep shadows, noisy, high contrast"
-  num_inference_steps: 20
-  guidance_scale: 7.0
+  num_inference_steps: 30
+  guidance_scale: 7.5
+  strength: 0.45
 
 preprocess:
   # Geometry Correction Settings (CPU)
@@ -29,7 +37,7 @@ postprocess:
   gaussian_radius: 2
 
 fusion:
-  detail_strength: 0.8
-  relief_strength: 0.5
+  detail_strength: 1.0
+  relief_strength: 0.9
   guided_radius: null    # If null, automatically uses ~1.5% of image size
   guided_eps: 0.001

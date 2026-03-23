@@ -1,16 +1,43 @@
+import os
+
 import torch
 from diffusers import MarigoldDepthPipeline
+
+from utils.model_source import resolve_model_source
 
 
 class DepthEstimator:
     """Marigold-based monocular depth estimation with OOM fallback."""
 
-    def __init__(self, model_name, torch_dtype="float16", device="cuda"):
+    def __init__(
+        self,
+        model_config,
+        project_dir,
+        torch_dtype="float16",
+        device="cuda",
+        offline=False,
+    ):
         self.device = device
         dtype = torch.float16 if torch_dtype == "float16" else torch.float32
+        model_source = resolve_model_source(
+            model_config,
+            project_dir=project_dir,
+            path_keys=("local_path", "path"),
+            repo_keys=("name", "repo_id"),
+            fallback_keys=("name",),
+            offline=offline,
+            label="深度模型",
+        )
+        local_files_only = os.path.isdir(model_source)
+        load_kwargs = {
+            "torch_dtype": dtype,
+            "local_files_only": local_files_only,
+        }
+        if dtype == torch.float16:
+            load_kwargs["variant"] = "fp16"
         self.pipe = MarigoldDepthPipeline.from_pretrained(
-            model_name,
-            torch_dtype=dtype,
+            model_source,
+            **load_kwargs,
         ).to(device)
 
     def estimate(self, image, ensemble_size=5, denoising_steps=10, status_callback=None):

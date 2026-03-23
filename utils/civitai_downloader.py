@@ -2,11 +2,11 @@ import os
 import urllib.request
 import traceback
 
-def download_civitai_lora(model_version_id="449471", save_dir="models/lora", status_callback=None):
+def download_civitai_lora(model_version_id="438287", save_dir="models/lora", status_callback=None):
     """
     Downloads a LoRA from Civitai given its version ID.
-    Default ID is "449471" which corresponds to "Depth map Lora - SD1.5 - v1.0"
-    (A highly rated LoRA for grayscale depth map generation).
+    Default ID is "438287" which corresponds to Civitai model 392921:
+    "Depth map Lora - SD1.5".
     """
     os.makedirs(save_dir, exist_ok=True)
     
@@ -20,7 +20,7 @@ def download_civitai_lora(model_version_id="449471", save_dir="models/lora", sta
         return save_path
         
     if status_callback:
-        status_callback("首次运行：正在自动下载最佳浮雕 LoRA 模型...（约 144MB）")
+        status_callback("首次运行：正在自动下载 Depth map LoRA (SD 1.5)...")
     
     try:
         # We don't have tqdm in requirements list currently. We can either add it, 
@@ -32,8 +32,19 @@ def download_civitai_lora(model_version_id="449471", save_dir="models/lora", sta
                 if percent % 10 == 0:
                     status_callback(f"正在下载浮雕 LoRA 模型... {percent}%")
                     
-        req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-        urllib.request.urlretrieve(download_url, filename=save_path, reporthook=reporthook)
+        req = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req) as response, open(save_path, "wb") as output_file:
+            total_size = response.headers.get("Content-Length")
+            total_size = int(total_size) if total_size and total_size.isdigit() else 0
+            bytes_written = 0
+            block_size = 1024 * 64
+            while True:
+                chunk = response.read(block_size)
+                if not chunk:
+                    break
+                output_file.write(chunk)
+                bytes_written += len(chunk)
+                reporthook(bytes_written // block_size, block_size, total_size)
         
         if status_callback:
             status_callback("浮雕 LoRA 下载完成")

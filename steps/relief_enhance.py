@@ -1,13 +1,19 @@
+import os
+
 import torch
 from diffusers import StableDiffusionControlNetImg2ImgPipeline, ControlNetModel, UniPCMultistepScheduler
 from PIL import Image
 
+from utils.model_source import resolve_model_source, resolve_path
+
 class ReliefEnhancer:
     """Uses SD 1.5 with ControlNet Depth and Relief LoRA to add surface micro-textures."""
 
-    def __init__(self, config, device="cuda"):
+    def __init__(self, config, project_dir, device="cuda", offline=False):
         self.config = config
+        self.project_dir = project_dir
         self.device = device
+        self.offline = offline
         self.pipe = None
 
     def _load_model(self):
@@ -16,19 +22,47 @@ class ReliefEnhancer:
             return
 
         dtype = torch.float16
+        controlnet_source = resolve_model_source(
+            self.config,
+            project_dir=self.project_dir,
+            path_keys=("controlnet_local_path", "controlnet_path"),
+            repo_keys=("controlnet_model_id", "controlnet"),
+            fallback_keys=("controlnet_model_id",),
+            offline=self.offline,
+            label="ControlNet 模型",
+        )
+        base_model_source = resolve_model_source(
+            self.config,
+            project_dir=self.project_dir,
+            path_keys=("base_model_local_path", "base_model_path"),
+            repo_keys=("base_model", "model_id"),
+            fallback_keys=("model_id",),
+            offline=self.offline,
+            label="SD 基础模型",
+        )
+        local_controlnet = os.path.isdir(controlnet_source)
+        local_base_model = os.path.isdir(base_model_source)
+        shared_load_kwargs = {}
+        if dtype == torch.float16:
+            shared_load_kwargs["variant"] = "fp16"
+            shared_load_kwargs["use_safetensors"] = True
         
         # 1. Load ControlNet
         controlnet = ControlNetModel.from_pretrained(
-            self.config["controlnet"],
+            controlnet_source,
             torch_dtype=dtype,
+            local_files_only=local_controlnet,
+            **shared_load_kwargs,
         )
         
         # 2. Load Pipeline
         self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-            self.config["base_model"],
+            base_model_source,
             controlnet=controlnet,
             torch_dtype=dtype,
-            safety_checker=None
+            safety_checker=None,
+            local_files_only=local_base_model,
+            **shared_load_kwargs,
         ).to(self.device)
         
         # Use UniPC for faster inference
@@ -38,6 +72,7 @@ class ReliefEnhancer:
         lora_path = self.config.get("lora_path")
         if lora_path and lora_path != "auto":
             try:
+                lora_path = resolve_path(self.project_dir, lora_path) or lora_path
                 # We expect a safetensors file
                 self.pipe.load_lora_weights(lora_path)
             except Exception as e:
@@ -102,7 +137,9 @@ class ReliefEnhancer:
                 guidance_scale=guidance,
                 num_inference_steps=steps,
                 generator=generator,
-                cross_attention_kwargs={"scale": self.config.get("lora_weight", 0.8)} # scale LoRA effect
+                cross_attention_kwargs={
+                    "scale": self.config.get("lora_scale", self.config.get("lora_weight", 0.8))
+                },
             )
             
             result_rgb = output.images[0]

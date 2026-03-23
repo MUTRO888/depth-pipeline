@@ -6,3 +6,13 @@ dist/
 build/
 .env
 .DS_Store
+.offline-build-tools/
+models/*
+!models/sd-relief/
+models/sd-relief/*
+!models/sd-relief/lora/
+models/sd-relief/lora/*
+!models/sd-relief/lora/relief_lora_438287.safetensors
+!models/sd-relief/lora/README.md
+depth-pipeline/
+offline_bundle_manifest.json
