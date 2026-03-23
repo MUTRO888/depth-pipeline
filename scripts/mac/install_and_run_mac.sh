@@ -43,8 +43,14 @@ fi
 
 # ── 3. 创建/激活虚拟环境 ────────────────────────────────────────
 if [ ! -f "$VENV_DIR/bin/python3" ]; then
-  echo "[SETUP] 创建虚拟环境..."
-  "$PYTHON_EXE" -m venv "$VENV_DIR"
+  echo "[SETUP] 检测到虚拟环境不完整，正在重新创建..."
+  rm -rf "$VENV_DIR"
+  "$PYTHON_EXE" -m venv "$VENV_DIR" --copies
+  if [ ! -f "$VENV_DIR/bin/python3" ]; then
+      echo "[ERROR] 无法正常生成 Python3 虚拟环境执行文件，请检查您的 Python3.12 安装是否完整。"
+      ls -la "$VENV_DIR/bin" 2>/dev/null
+      exit 1
+  fi
 fi
 source "$VENV_DIR/bin/activate"
 echo "[OK] 虚拟环境已激活"
