@@ -11,6 +11,25 @@ VENV_DIR="$PROJECT_DIR/.venv"
 CONFIG_FILE="$PROJECT_DIR/config.full.yaml"
 LORA_FILE="$PROJECT_DIR/models/sd-relief/lora/relief_lora_438287.safetensors"
 
+# ── 0. 检查并自动安装系统依赖 (Mac Homebrew) ───────────────────
+if ! command -v brew &>/dev/null; then
+  echo "[ERROR] 未检测到 Homebrew。请先在终端运行以下命令安装 Mac 万能包管理器："
+  echo '        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  exit 1
+fi
+
+echo "[SETUP] 正在检查基础系统组件..."
+BREW_DEPS=("python@3.12" "python-tk@3.12" "git" "git-lfs")
+for dep in "${BREW_DEPS[@]}"; do
+  if ! brew list "$dep" &>/dev/null; then
+    echo "        > 未检测到或者版本过旧: $dep，正在通过 Homebrew 自动下载安装..."
+    brew install "$dep"
+  else
+    echo "        > [OK] $dep 已安装"
+  fi
+done
+echo ""
+
 # ── 1. 检查 Python ──────────────────────────────────────────────
 PYTHON_EXE=""
 for cmd in python3.12 python3.13 python3; do
@@ -56,12 +75,14 @@ source "$VENV_DIR/bin/activate"
 echo "[OK] 虚拟环境已激活"
 
 # ── 4. 安装依赖 ─────────────────────────────────────────────────
-echo "[SETUP] 安装/更新依赖 (下载较大，可能需要几分钟，请耐心等待)..."
-"$VENV_DIR/bin/python3" -m pip install -U pip
+echo "[SETUP] 安装/更新依赖 (调用清华镜像加速下载，可能需要几分钟，请耐心等待)..."
+PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
+
+"$VENV_DIR/bin/python3" -m pip install -U pip -i "$PIP_MIRROR"
 
 # Mac Apple Silicon: 安装 PyTorch（带 MPS 支持）
-"$VENV_DIR/bin/python3" -m pip install torch torchvision
-"$VENV_DIR/bin/python3" -m pip install -r "$PROJECT_DIR/requirements.txt"
+"$VENV_DIR/bin/python3" -m pip install torch torchvision -i "$PIP_MIRROR"
+"$VENV_DIR/bin/python3" -m pip install -r "$PROJECT_DIR/requirements.txt" -i "$PIP_MIRROR"
 
 echo "[OK] 依赖安装完成"
 

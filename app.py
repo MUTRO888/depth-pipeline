@@ -8,6 +8,9 @@ import threading
 
 # Optional drag-and-drop support
 try:
+    import sys
+    if sys.platform == 'darwin':
+        raise ImportError("macOS tkinterdnd2 binaries are often broken, falling back to standard Tk")
     from tkinterdnd2 import TkinterDnD, DND_FILES
 
     HAS_DND = True
@@ -404,10 +407,19 @@ class DepthPipelineApp:
 # ── Entry point ──────────────────────────────────────────────────────
 
 def main():
-    root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
-    DepthPipelineApp(root)
+    print(">> 正在初始化图形界面 (Tkinter)...")
+    if HAS_DND:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
+        
+    # 如果是 Mac，让窗口强制置顶一次避免藏在终端后面
+    if sys.platform == 'darwin':
+        os.system('''/usr/bin/osascript -e 'tell app "Finder" to set frontmost of process "Python" to true' ''')
+        
+    app = DepthPipelineApp(root)
+    print(">> 启动成功！如果没看到窗口，请在【程序坞（底部任务栏）】里找一下“Python”或者羽毛笔图标。")
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
