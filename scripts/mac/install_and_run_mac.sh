@@ -50,12 +50,12 @@ source "$VENV_DIR/bin/activate"
 echo "[OK] 虚拟环境已激活"
 
 # ── 4. 安装依赖 ─────────────────────────────────────────────────
-echo "[SETUP] 安装/更新依赖..."
-python3 -m pip install -U pip -q
+echo "[SETUP] 安装/更新依赖 (下载较大，可能需要几分钟，请耐心等待)..."
+"$VENV_DIR/bin/python3" -m pip install -U pip
 
 # Mac Apple Silicon: 安装 PyTorch（带 MPS 支持）
-python3 -m pip install torch torchvision -q
-python3 -m pip install -r "$PROJECT_DIR/requirements.txt" -q
+"$VENV_DIR/bin/python3" -m pip install torch torchvision
+"$VENV_DIR/bin/python3" -m pip install -r "$PROJECT_DIR/requirements.txt"
 
 echo "[OK] 依赖安装完成"
 
@@ -86,7 +86,7 @@ export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export DEPTH_PIPELINE_CONFIG="$CONFIG_FILE"
 
 echo "[SETUP] 下载/检查 Hugging Face 模型（镜像: $HF_ENDPOINT）..."
-python3 scripts/download_full_models.py --config "$CONFIG_FILE"
+"$VENV_DIR/bin/python3" scripts/download_full_models.py --config "$CONFIG_FILE"
 
 # ── 7. 启动 ─────────────────────────────────────────────────────
 echo ""
@@ -94,4 +94,4 @@ echo "========================================="
 echo "  启动浮雕深度估计（Mac Apple Silicon）"
 echo "========================================="
 echo ""
-python3 app.py
+"$VENV_DIR/bin/python3" app.py
