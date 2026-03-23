@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mac 一键安装并启动浮雕深度估计（全效果版）
 # 用法:  ./install_and_run_mac.sh
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
