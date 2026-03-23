@@ -48,9 +48,42 @@ class DepthPipelineApp:
     # ── UI Construction ──────────────────────────────────────────────
 
     def _build_ui(self):
-        main = ttk.Frame(self.root, padding=10)
-        main.pack(fill=tk.BOTH, expand=True)
+        # 建立外层滚动容器
+        container = ttk.Frame(self.root)
+        container.pack(fill=tk.BOTH, expand=True)
 
+        canvas = tk.Canvas(container, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        
+        main = ttk.Frame(canvas, padding=10)
+        
+        main.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=main, anchor="nw", tags="main_frame")
+        
+        def _configure_canvas(event):
+            if canvas.winfo_width() > main.winfo_reqwidth():
+                canvas.itemconfig("main_frame", width=canvas.winfo_width())
+                
+        canvas.bind("<Configure>", _configure_canvas)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 支持鼠标滚轮滚动
+        def _on_mousewheel(event):
+            if sys.platform == 'darwin':
+                canvas.yview_scroll(int(-1 * event.delta), "units")
+            else:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+        self.root.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # 内部业务 UI 构建
         self._build_upload_section(main)
         ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
